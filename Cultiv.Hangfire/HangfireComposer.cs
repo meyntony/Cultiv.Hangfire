@@ -2,6 +2,7 @@
 using Hangfire;
 using Hangfire.Console;
 using Hangfire.SqlServer;
+using J2N.Collections.Generic;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.Composing;
@@ -17,6 +18,12 @@ namespace Cultiv.Hangfire
         public void Compose(IUmbracoBuilder builder)
         {
             var connectionString = GetConnectionString(builder);
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                // This might happen when the package is installed before Umbraco is installed
+                // https://github.com/nul800sebastiaan/Cultiv.Hangfire/issues/11
+                return;
+            }
             
             // Configure Hangfire to use our current database and add the option to write console messages
             builder.Services.AddHangfire(configuration =>
@@ -64,6 +71,9 @@ namespace Cultiv.Hangfire
             });
         }
 
+        private static readonly List<string> AllowedSqlProviderNames = 
+            new() { Umbraco.Cms.Persistence.SqlServer.Constants.ProviderName, "System.Data.SqlClient" };
+        
         private static string GetConnectionString(IUmbracoBuilder builder)
         {
             var connectionString = builder.Config.GetUmbracoConnectionString(Constants.System.AlternativeConnectionStringName);
@@ -73,9 +83,9 @@ namespace Cultiv.Hangfire
             }
             
             var providerName = builder.Config.GetConnectionStringProviderName(Umbraco.Cms.Core.Constants.System.UmbracoConnectionName);
-			if (providerName != null && providerName != Umbraco.Cms.Persistence.SqlServer.Constants.ProviderName)
+			if (providerName != null && AllowedSqlProviderNames.InvariantContains(providerName) == false)
 			{
-				throw new NotSupportedException($"Cultiv.Hangfire only works on SQL Server and LocalDb, your current provider ({providerName}) is not supported.");
+				throw new NotSupportedException($"Cultiv.Hangfire only works on providers `{string.Join("`, `", AllowedSqlProviderNames)}`, your current provider ({providerName}) is not supported.");
 			}
             
             return builder.Config.GetUmbracoConnectionString();
